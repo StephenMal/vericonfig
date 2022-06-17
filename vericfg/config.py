@@ -1,5 +1,6 @@
 from .cstm_exceptions import *
 from itertools import chain
+import inspect, json
 
 class config():
 
@@ -48,19 +49,25 @@ class config():
             return self.params.get(args[0], \
                                 self.defaults.setdefault(args[0], args[1]))
         else:
-            raise Exception()
+            raise CfgPyUseError('Expected 1-2 positional arguments')
 
     def get(self, *args, **kargs):
         if len(args) == 0:
             raise CfgPyUseError('Did not provide a key')
         elif len(args) == 1 or len(args) == 2:
             return self.validate(args[0], self._get(*args,**kargs), **kargs)
-        raise RunTimeError()
+        else:
+            raise CfgPyUseError('Expected 1-2 positional arguments')
+        raise CfgPyUseError()
 
     def set(self, key, item):
         if not isinstance(key, str):
-            raise KeyError('Key should be a string')
-        self.params[key] = item
+            raise CfgPyKeyError('Key should be a string')
+        try:
+            self.defaults.pop(key)
+        except:
+            pass
+        self.params.__setitem__(key, item)
 
     def __setitem__(self, key, item):
         self.set(key, item)
@@ -70,14 +77,37 @@ class config():
 
     def update(self, dct):
         if not isinstance(dct, dict):
-            raise TypeError('Expected dictionary')
+            raise CfgPyUseError('Expected dictionary')
         self.params.update(dct)
 
     def to_dict(self):
         dct = {}
-        dct.update(params)
-        dct.update(defaults)
+        dct.update(self.params)
+        dct.update(self.defaults)
         return dct
+
+    def json_dump(self, F):
+        dct = self.to_dict()
+        new_dct = {}
+        for key, item in dct.items():
+            if isinstance(item, (int, float, str, bool)):
+                new_dct[key] = item
+            elif inspect.isclass(item):
+                try:
+                    new_dct[key] = str(item.__name__)
+                except:
+                    pass
+                new_dct[key] = item
+            elif item == int:
+                new_dct[key] = 'int'
+            elif item == float:
+                new_dct[key] = 'float'
+            else:
+                try:
+                    new_dct[key] = json.dumps(item)
+                except:
+                    pass
+        json.dump(new_dct, F)
 
     def __str__(self):
         return {'user_params':self.params,\
@@ -116,6 +146,24 @@ class config():
             return self.params.setdefault(key, dflt)
         else:
             return self.validate(self.params.setdefault(key, dflt), **kargs)
+
+    def update_default(self, dct, **kargs):
+        if not isinstance(dct, dict):
+            raise TypeError('Should provide a dictionary')
+
+        if kargs.get('overwrite', False):
+            self.defaults.update(dct)
+        elif kargs.get('ignore_duplicates', True):
+            dflt = self.defaults
+            for key, item in dct.items():
+                dflt.setdefault(key, item)
+        else:
+            dflt = self.defaults
+            for key, item in dct.items():
+                if key in self.defaults:
+                    raise \
+                        CfgPyKeyError('Trying to overwrite pre-existing default')
+                dflt[key] = item
 
     def clear(self):
         del self.params, self.defaults, self.restrictions
@@ -240,23 +288,22 @@ class config():
                 raise InvalidOptionError(name=key, value=object, \
                                                             options=options)
 
-            if 'options' in reqs and len(inter) == 0:
-                inter = set(options).intersection(set(reqs.get('options')))
-                if len(inter) == 0:
-                    raise PreviousRestrictionConflict('options conflict')
-                reqs['options'] = tuple(inter)
-            else:
-                reqs['options'] = options
-
         if 'dtype' in kargs:
             dtype = kargs.get('dtype')
             if isinstance(dtype, tuple):
-                if any([not isinstance(dt, type) for dt in dtype]):
-                    raise CfgPyUseError('all items in dtype tuple should be '+\
-                                                'of type type')
+                if any((not (isinstance(dt, type) or inspect.isclass(dt)) \
+                                                            for dt in dtype)):
+                    bad_dt_vals = []
+                    for dt in dtype:
+                        if not (isinstance(dt, type) or inspect.isclass(dt)):
+                            bad_dt_vals.append(\
+                                f' --- {dt} ({type(dt)})')
+                    raise CfgPyUseError('\nIncluded nonclass / type in dtype:\n'\
+                                        +'\n'.join(bad_dt_vals))
 
-            elif not isinstance(dtype, type):
-                raise CfgPyUseError('dtype should be tuple of types or a type')
+            elif not (isinstance(dtype, type) or inspect.isclass(X)):
+                raise CfgPyUseError('\nIncluded nonclass / type in dtype: '+\
+                                        f'\n --- {dtype}({type(dtype)})')
             if not isinstance(item, dtype):
                 raise IncorrectTypeError(name=key, value=item, dtype=dtype)
 
@@ -298,10 +345,15 @@ class config():
         del self.defaults
         del self.restrictions
 
+    def __contains__(self, item):
+        return (item in self.params or item in self.defaults)
+
     def sumstr(self):
         prm, dflt = self.params, self.defaults
         s = 'Parameter Name                | Value\n'
-        for key in sorted(chain(prm.keys(), dflt.keys())):
+        keys = set(prm.keys())
+        keys.update(dflt.keys())
+        for key in sorted(keys):
             if key in prm:
                 s += key.ljust(30,' ')+'| '+str(prm.get(key)).ljust(48)+'\n'
             elif key in dflt:

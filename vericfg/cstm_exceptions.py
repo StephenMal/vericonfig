@@ -3,17 +3,23 @@ class CfgPyError(Exception):
 
     __slots__ = ('msg')
 
+    def __init__(self, msg):
+        self.msg = msg
+
     def __str__(self):
         return self.msg
 
 class CfgPyValueError(CfgPyError):
-    pass
+    def __init__(self, msg):
+        super().__init__(msg)
 
 class CfgPyTypeError(CfgPyError):
-    pass
+    def __init__(self, msg):
+        super().__init__(msg)
 
 class CfgPyKeyError(CfgPyError):
-    pass
+    def __init__(self, msg):
+        super().__init__(msg)
 
 
 ''' CfgPy Errors '''
@@ -21,13 +27,21 @@ class CfgPyUseError(CfgPyError):
     def __init__(self, msg):
         super().__init__(msg)
 
+class CfgPyKeyError(CfgPyError):
+    def __init__(self, msg):
+        super().__init__(msg)
+
 class RestrictionConflict(CfgPyUseError):
     def __init__(self, msg):
-        suuper().__init__(msg)
+        super().__init__(msg)
+
+class CfgPyRuntimeError(CfgPyError):
+    def __init__(self, msg):
+        super().__init__(msg)
 
 class PreviousRestrictionConflict(CfgPyUseError):
     def __init__(self, msg):
-        suuper().__init__(msg)
+        super().__init__(msg)
 
 class ValueOutOfRangeError(CfgPyValueError):
     def __init__(self, name='Value', value=None, **kargs):
